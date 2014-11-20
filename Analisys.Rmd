@@ -1,0 +1,113 @@
+---
+title: "Course Project"
+author: "Andrea Basaglia"
+date: "20/11/2014"
+output: html_document
+---
+
+#Objective
+
+The objective is to predict, using a machine learning algorithm, a set of 20 human activities between five class
+
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+#Data
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv. 
+
+It contains 19622 observations, and contains a variable called classe, which is our target variable. classe can take the values "A", "B", "C", "D" and "E"
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv. 
+
+It contains only the 20 activities that should be "guessed". Of course, the test data does not contain the classe variable in it.
+
+#Preparing and cleaning the Data
+
+First load the raw data
+```{r cache=TRUE}
+# Load train and test data
+#setwd("PraticalML/")
+train.full <- read.csv("pml-training.csv", na.string = c("NA", ""))
+test.full <- read.csv("pml-testing.csv", na.string = c("NA", ""))
+```
+
+Remove some useless feature 
+```{r}
+NumNAinTrain <- sapply(train.full, function(x) sum(is.na(x)))
+
+# The following columns aren't useful for the prediction 
+# X is an index
+# 'raw_timestamp_part_1',  'raw_timestamp_part_2', cvtd_timestamp. The prediction doesn't depends from 
+# when the measurement are done
+# new_window contains all the averaged values that aren't available in the test set
+# user_name the name of candidates
+ColToBeDeleted <- list('X', 'raw_timestamp_part_1',  'raw_timestamp_part_2','new_window', 'cvtd_timestamp','user_name')
+
+# Compute features where there are more than 70% of NA
+NumRowInTrain <- nrow(train.full)
+for (i in names(NumNAinTrain)) {
+  if (NumNAinTrain[i] / NumRowInTrain > 0.7)
+    ColToBeDeleted <- c (ColToBeDeleted, i)  
+}
+
+#Drop features not useful and features with more than 70% of NA. 
+train <-train.full[,!(names(train.full) %in% ColToBeDeleted)]
+test  <-test.full[,!(names(test.full) %in% ColToBeDeleted)]
+
+```
+
+Create a Cross Validation Dataset to check the model
+```{r}
+library(caret)
+#split the train in train e cross validation set
+inTrain <- createDataPartition(y = train$classe, p = 0.7, list = FALSE)
+train.feature <- train[inTrain, -ncol(train)]
+train.outcome <- train[inTrain, ncol(train), drop = FALSE]
+cv.feature <- train[-inTrain, -ncol(train)]
+cv.outcome <- train[-inTrain, ncol(train), drop = FALSE]
+```
+#Prediction
+Perform Principal Compenet Analisys in order to reduce the number of features (retaining 97.5 of information)
+```{r cache=TRUE}
+set.seed(123)
+
+pca.model <- preProcess(train.feature, method = "pca", thresh = .975)
+pca.model
+```
+
+Train a Random Forest model using the new features on the train set computed above
+```{r cache=TRUE}
+library(doMC)
+registerDoMC(cores = 4)
+train.feature.pca<-predict(pca.model, train.feature)
+rf.model <- train(train.feature.pca, train.outcome$classe, method = "rf")
+rf.model
+```
+
+Check the model accuracy on the Cross Validation Data set
+```{r}
+cv.feature.pca<-predict(pca.model, cv.feature)
+cv.feature.pred <- predict(rf.model, cv.feature.pca)
+confusionMatrix(cv.feature.pred, cv.outcome$classe)
+```
+We obtain an accuracy of 0.9803
+
+Now we the obtained model we predict outcome on the test set
+```{r}
+test.feature <- test[, -ncol(test)]
+
+test.feature.pca<-predict(pca.model, test.feature)
+test.feature.pred <- predict(rf.model, test.feature.pca)
+
+#test.feature.pred
+```
+
+The returned prediction vector of 20 characters has got 20 of 20. 
+
+
